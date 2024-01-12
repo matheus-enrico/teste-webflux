@@ -1,5 +1,7 @@
 package br.com.maenrico.testewebflux;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
@@ -9,34 +11,38 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
+import java.io.IOException;
+
 @RestController
 public class VideoController {
 
     @Autowired
     private StreamingService streamingService;
 
-    @Autowired
+    private static final Logger log = LoggerFactory.getLogger(StorageComponent.class);
+
     private StorageComponent storageComponent;
 
-    @GetMapping(value = "/videos/{title}", produces = "video/mp4")
-    public Flux<DataBuffer> streamVideo(@PathVariable String title, ServerHttpResponse response) {
-        // Obtém os chunks necessários do GCS
-        List<Chunk> chunks = storageComponent.downloadFileStreaming();
+    public VideoController() throws IOException {
+        this.storageComponent = new StorageComponent("netflixo-videos", "netflixo-410521");
+    }
 
-        // Configura os headers da resposta
-        response.getHeaders().set(HttpHeaders.CONTENT_TYPE, "video/mp4");
-        response.getHeaders().set(HttpHeaders.ACCEPT_RANGES, "bytes");
+    @GetMapping(value = "/videos/{uuid}", produces = "video/mp4")
+    public Flux<DataBuffer> streamVideo(@PathVariable String uuid, ServerHttpResponse response) {
+        try {
+            String targetName = String.format("%s.mp4", uuid);
 
-        // Converte os chunks em Flux<DataBuffer> para streaming
-        return Flux.fromIterable(chunks)
-                .map(chunk -> {
-                    // Recupera o conteúdo do chunk do GCS
-                    byte[] chunkData = streamingService.getChunkData(chunk);
+            // Configura os headers da resposta
+            HttpHeaders headers = response.getHeaders();
+            headers.set(HttpHeaders.CONTENT_TYPE, "video/mp4");
+            headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
 
-                    // Cria um DataBuffer a partir dos bytes do chunk
-                    DataBuffer dataBuffer = response.bufferFactory().wrap(chunkData);
-
-                    return dataBuffer;
-                });
+            // Realiza o streaming do vídeo
+            return storageComponent.downloadFileStreaming(uuid, response);
+        } catch (Exception e) {
+            // Trate a exceção conforme necessário
+           log.error("Erro ao fazer streaming do vídeo", e);
+            return Flux.error(e);
+        }
     }
 }

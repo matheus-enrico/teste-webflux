@@ -1,32 +1,31 @@
 package br.com.maenrico.testewebflux;
 
-import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.ReadChannel;
 import com.google.cloud.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.server.reactive.ServerHttpResponse;
+import reactor.core.publisher.Flux;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+
 public class StorageComponent {
 
     private static final Logger log = LoggerFactory.getLogger(StorageComponent.class);
 
-    private String bucketName;
 
+    private String bucketName;
     private Storage storage;
 
     public StorageComponent(String bucketName, String projectName) throws IOException {
-        // 7000
-        // 10000 - 9600 = 400
-
         this.bucketName = bucketName;
         this.storage = StorageOptions.newBuilder()
                 .setProjectId(projectName)
@@ -44,7 +43,8 @@ public class StorageComponent {
 
         storage.compose(composeBuilder.build());
 
-        //Seria interessante deletar os chunks após o compose? Ou deixar para fazer o download dos chunks e montar dps a partir deles?
+        // Seria interessante deletar os chunks após o compose?
+        // Ou deixar para fazer o download dos chunks e montar dps a partir deles?
         blobIds.forEach(storage::delete);
     }
 
@@ -74,19 +74,28 @@ public class StorageComponent {
         return blobInfo;
     }
 
-    public void downloadFileStreaming(final String uuid, String targetName) throws IOException {
-        log.info("Downloading {} to {}", uuid, targetName);
+    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) throws IOException {
+        log.info("Downloading {}", uuid);
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
         ReadChannel reader = blob.reader();
 
-        ByteBuffer buffer = ByteBuffer.allocate(64 * 1024); // Tamanho do buffer, por exemplo, 64KB
+        ByteBuffer buffer = ByteBuffer.allocate(1024 * 100); // Tamanho do buffer, por exemplo, 64KB
+        List<DataBuffer> dataBuffers = new ArrayList<>();
+
         while (reader.read(buffer) > 0) {
             buffer.flip();
-            // Aqui você processa os dados do buffer
-            // Por exemplo, salvando em um arquivo ou transmitindo
+            byte[] chunkData = new byte[buffer.remaining()];
+            buffer.get(chunkData);
+
+            DataBuffer dataBuffer = response.bufferFactory().wrap(chunkData);
+            dataBuffers.add(dataBuffer);
+
             buffer.clear();
         }
-        log.info("Downloaded {} to {}", uuid, targetName);
-    }
 
+        reader.close();
+        log.info("Downloaded {}", uuid);
+
+        return Flux.fromIterable(dataBuffers);
+    }
 }
