@@ -74,28 +74,37 @@ public class StorageComponent {
         return blobInfo;
     }
 
-    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) throws IOException {
-        log.info("Downloading {}", uuid);
+    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
         ReadChannel reader = blob.reader();
 
-        ByteBuffer buffer = ByteBuffer.allocate(1024 * 100); // Tamanho do buffer, por exemplo, 64KB
-        List<DataBuffer> dataBuffers = new ArrayList<>();
+        return Flux.create(sink -> {
+            ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024 * 100);
 
-        while (reader.read(buffer) > 0) {
-            buffer.flip();
-            byte[] chunkData = new byte[buffer.remaining()];
-            buffer.get(chunkData);
+            try {
+                while (reader.read(buffer) > 0) {
+                    buffer.flip();
+                    byte[] chunkData = new byte[buffer.remaining()];
+                    buffer.get(chunkData);
 
-            DataBuffer dataBuffer = response.bufferFactory().wrap(chunkData);
-            dataBuffers.add(dataBuffer);
+                    DataBuffer dataBuffer = response.bufferFactory().wrap(chunkData);
+                    sink.next(dataBuffer);
 
-            buffer.clear();
-        }
-
-        reader.close();
-        log.info("Downloaded {}", uuid);
-
-        return Flux.fromIterable(dataBuffers);
+                    buffer.clear();
+                }
+            } catch (IOException e) {
+                log.error("Erro ao ler do ReadChannel", e);
+                sink.error(e);
+            } finally {
+                try {
+                    reader.close();
+                    sink.complete();
+                } catch (Exception e) {
+                    log.error("Erro ao fechar o ReadChannel", e);
+                    sink.error(e);
+                }
+            }
+        });
     }
+
 }
