@@ -5,6 +5,7 @@ import com.google.cloud.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import reactor.core.publisher.Flux;
 
@@ -20,7 +21,6 @@ import java.util.List;
 public class StorageComponent {
 
     private static final Logger log = LoggerFactory.getLogger(StorageComponent.class);
-
 
     private String bucketName;
     private Storage storage;
@@ -74,14 +74,13 @@ public class StorageComponent {
         return blobInfo;
     }
 
-    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) {
+    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpRequest request, ServerHttpResponse response) throws IOException {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
         ReadChannel reader = blob.reader();
 
         return Flux.create(sink -> {
-            ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024 * 100);
-
             try {
+                ByteBuffer buffer = ByteBuffer.allocate(1024 * 100); // Tamanho do buffer
                 while (reader.read(buffer) > 0) {
                     buffer.flip();
                     byte[] chunkData = new byte[buffer.remaining()];
@@ -92,19 +91,16 @@ public class StorageComponent {
 
                     buffer.clear();
                 }
+                reader.close();
+                sink.complete();
             } catch (IOException e) {
-                log.error("Erro ao ler do ReadChannel", e);
                 sink.error(e);
-            } finally {
-                try {
-                    reader.close();
-                    sink.complete();
-                } catch (Exception e) {
-                    log.error("Erro ao fechar o ReadChannel", e);
-                    sink.error(e);
-                }
             }
-        });
+        }).doFinally(signalType -> {
+            log.info("Closing reader");
+            reader.close();
+        }).cast(DataBuffer.class);
     }
+
 
 }
