@@ -9,6 +9,7 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
@@ -29,20 +30,22 @@ public class VideoController {
     }
 
     @GetMapping(value = "/videos/{uuid}", produces = "video/mp4")
-    public Flux<DataBuffer> streamVideo(@PathVariable String uuid, ServerHttpRequest request, ServerHttpResponse response) {
+    public Flux<DataBuffer> streamVideo(@PathVariable String uuid,
+                                        @RequestHeader("Range") String range,
+                                        ServerHttpRequest request,
+                                        ServerHttpResponse response) {
         try {
             String targetName = String.format("%s.mp4", uuid);
 
             // Configura os headers da resposta
-            HttpHeaders headers = response.getHeaders();
-            headers.set(HttpHeaders.CONTENT_TYPE, "video/mp4");
-            headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
+
+
 
             // Realiza o streaming do vídeo
             return storageComponent.downloadFileStreaming(uuid, request, response);
         } catch (Exception e) {
             // Trate a exceção conforme necessário
-           log.error("Erro ao fazer streaming do vídeo", e);
+            log.error("Erro ao fazer streaming do vídeo", e);
             return Flux.error(e);
         }
     }

@@ -5,6 +5,10 @@ import com.google.cloud.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpRange;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import reactor.core.publisher.Flux;
@@ -16,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 
 public class StorageComponent {
@@ -76,31 +81,73 @@ public class StorageComponent {
 
     public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpRequest request, ServerHttpResponse response) throws IOException {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
-        ReadChannel reader = blob.reader();
 
+        HttpHeaders headers = response.getHeaders();
+        headers.set(HttpHeaders.CONTENT_TYPE, "video/mp4");
+        headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
+        headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(blob.getSize()));
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"video.mp4\"");
+        headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
+        headers.set(HttpHeaders.PRAGMA, "no-cache");
+        headers.set(HttpHeaders.EXPIRES, "0");
+        response.setStatusCode(HttpStatus.PARTIAL_CONTENT);
+
+
+        List<String> strings = request.getHeaders().get(HttpHeaders.RANGE);
+        String[] value = Objects.requireNonNull(strings).get(0).split("=");
+        String[] split = value[1].split("-");
+
+        Integer start = Integer.parseInt(split[0]);
+        System.out.println("start = " + start);
+        Integer end = getEndRange(split, start, blob.getSize());
+        System.out.println("end = " + end);
+
+        long contentLength = end - start + 1;
+        System.out.println("contentLength = " + contentLength);
+        headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
+        headers.set(HttpHeaders.CONTENT_RANGE, String.format("bytes %s-%s/%s", start, end, blob.getSize()));
+
+
+        long finalEnd = end;
         return Flux.create(sink -> {
-            try {
-                ByteBuffer buffer = ByteBuffer.allocate(1024 * 100); // Tamanho do buffer
-                while (reader.read(buffer) > 0) {
-                    buffer.flip();
-                    byte[] chunkData = new byte[buffer.remaining()];
-                    buffer.get(chunkData);
+                    try (ReadChannel reader = blob.reader()) {
+                        reader.seek(start);
+                        long position = start;
+                        ByteBuffer buffer = ByteBuffer.allocate(1024 * 100);
 
-                    DataBuffer dataBuffer = response.bufferFactory().wrap(chunkData);
-                    sink.next(dataBuffer);
+                        while (position <= finalEnd) {
+                            buffer.clear();
+                            int read = reader.read(buffer);
+                            if (read <= 0) {
+                                break;
+                            }
+                            buffer.flip();
 
-                    buffer.clear();
-                }
-                reader.close();
-                sink.complete();
-            } catch (IOException e) {
-                sink.error(e);
-            }
-        }).doFinally(signalType -> {
-            log.info("Closing reader");
-            reader.close();
-        }).cast(DataBuffer.class);
+                            int chunkSize = (int) Math.min(buffer.remaining(), finalEnd - position + 1);
+                            byte[] chunk = new byte[chunkSize];
+                            buffer.get(chunk, 0, chunkSize);
+                            position += chunkSize;
+
+                            sink.next(response.bufferFactory().wrap(chunk));
+                        }
+                        sink.complete();
+                    } catch (IOException e) {
+                        sink.error(e);
+                    }
+                }).doFinally(signalType -> {
+                    log.info("Closing reader");
+                })
+                .cast(DataBuffer.class);
     }
 
+    public Integer getEndRange(String[] ranges, Integer start, Long blobSize) {
+        int end;
+        if (ranges.length > 1) {
+            end = Integer.parseInt(ranges[1]);
+        } else {
+            end = Math.min(start + 5000, blobSize.intValue());
+        }
+        return end;
+    }
 
 }
