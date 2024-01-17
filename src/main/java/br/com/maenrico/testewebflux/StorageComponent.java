@@ -6,9 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import reactor.core.publisher.Flux;
@@ -20,7 +18,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 
 
 public class StorageComponent {
@@ -79,7 +76,7 @@ public class StorageComponent {
         return blobInfo;
     }
 
-    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpRequest request, ServerHttpResponse response) throws IOException {
+    public Flux<DataBuffer> downloadFileStreaming(final String uuid, String rangeStr, ServerHttpRequest request, ServerHttpResponse response) throws IOException {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
 
         HttpHeaders headers = response.getHeaders();
@@ -92,27 +89,19 @@ public class StorageComponent {
         headers.set(HttpHeaders.EXPIRES, "0");
         response.setStatusCode(HttpStatus.PARTIAL_CONTENT);
 
+        final Range range = getRange(rangeStr, blob);
 
-        List<String> strings = request.getHeaders().get(HttpHeaders.RANGE);
-        String[] value = Objects.requireNonNull(strings).get(0).split("=");
-        String[] split = value[1].split("-");
-
-        Integer start = Integer.parseInt(split[0]);
-        System.out.println("start = " + start);
-        Integer end = getEndRange(split, start, blob.getSize());
-        System.out.println("end = " + end);
-
-        long contentLength = end - start + 1;
+        long contentLength = range.end() - range.start() + 1;
         System.out.println("contentLength = " + contentLength);
         headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
-        headers.set(HttpHeaders.CONTENT_RANGE, String.format("bytes %s-%s/%s", start, end, blob.getSize()));
+        headers.set(HttpHeaders.CONTENT_RANGE, String.format("bytes %s-%s/%s", range.start(), range.end(), blob.getSize()));
 
 
-        long finalEnd = end;
+        long finalEnd = range.end();
         return Flux.create(sink -> {
                     try (ReadChannel reader = blob.reader()) {
-                        reader.seek(start);
-                        long position = start;
+                        reader.seek(range.start());
+                        long position = range.start();
                         ByteBuffer buffer = ByteBuffer.allocate(1024 * 100);
 
                         while (position <= finalEnd) {
@@ -140,12 +129,25 @@ public class StorageComponent {
                 .cast(DataBuffer.class);
     }
 
+    record Range(long start, long end, long length) {
+    }
+
+    public Range getRange(String range, Blob blob) {
+        String[] value = range.split("=");
+        String[] split = value[1].split("-");
+        int start = Integer.parseInt(split[0]);
+        System.out.println("start = " + start);
+        Integer end = getEndRange(split, start, blob.getSize());
+        System.out.println("end = " + end);
+        return new Range(start, end, blob.getSize());
+    }
+
     public Integer getEndRange(String[] ranges, Integer start, Long blobSize) {
         int end;
         if (ranges.length > 1) {
             end = Integer.parseInt(ranges[1]);
         } else {
-            end = Math.min(start + 5000, blobSize.intValue());
+            end = blobSize.intValue() - 1;
         }
         return end;
     }

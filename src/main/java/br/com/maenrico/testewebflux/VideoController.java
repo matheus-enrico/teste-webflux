@@ -18,12 +18,9 @@ import java.io.IOException;
 @RestController
 public class VideoController {
 
-    @Autowired
-    private StreamingService streamingService;
-
     private static final Logger log = LoggerFactory.getLogger(StorageComponent.class);
 
-    private StorageComponent storageComponent;
+    private final StorageComponent storageComponent;
 
     public VideoController() throws IOException {
         this.storageComponent = new StorageComponent("netflixo-videos", "netflixo-410521");
@@ -35,14 +32,8 @@ public class VideoController {
                                         ServerHttpRequest request,
                                         ServerHttpResponse response) {
         try {
-            String targetName = String.format("%s.mp4", uuid);
-
-            // Configura os headers da resposta
-
-
-
             // Realiza o streaming do vídeo
-            return storageComponent.downloadFileStreaming(uuid, request, response);
+            return storageComponent.downloadFileStreaming(uuid, range, request, response);
         } catch (Exception e) {
             // Trate a exceção conforme necessário
             log.error("Erro ao fazer streaming do vídeo", e);
