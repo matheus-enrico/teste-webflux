@@ -21,7 +21,7 @@ public class VideoController {
     @Autowired
     private StreamingService streamingService;
 
-    private static final Logger log = LoggerFactory.getLogger(StorageComponent.class);
+    private static final Logger log = LoggerFactory.getLogger(VideoController.class);
 
     private StorageComponent storageComponent;
 
@@ -35,13 +35,8 @@ public class VideoController {
                                         ServerHttpRequest request,
                                         ServerHttpResponse response) {
         try {
-            String targetName = String.format("%s.mp4", uuid);
-
-            // Configura os headers da resposta
-
-
-
             // Realiza o streaming do vídeo
+            log.info("range: {}", range);
             return storageComponent.downloadFileStreaming(uuid, request, response);
         } catch (Exception e) {
             // Trate a exceção conforme necessário

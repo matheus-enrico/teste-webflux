@@ -6,9 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import reactor.core.publisher.Flux;
@@ -83,13 +81,7 @@ public class StorageComponent {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
 
         HttpHeaders headers = response.getHeaders();
-        headers.set(HttpHeaders.CONTENT_TYPE, "video/mp4");
-        headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
-        headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(blob.getSize()));
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"video.mp4\"");
-        headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
-        headers.set(HttpHeaders.PRAGMA, "no-cache");
-        headers.set(HttpHeaders.EXPIRES, "0");
+        setUpHeaders(headers, blob);
         response.setStatusCode(HttpStatus.PARTIAL_CONTENT);
 
 
@@ -106,6 +98,7 @@ public class StorageComponent {
         System.out.println("contentLength = " + contentLength);
         headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
         headers.set(HttpHeaders.CONTENT_RANGE, String.format("bytes %s-%s/%s", start, end, blob.getSize()));
+        log.info("Resp Header Content-Range: {}", String.format("bytes %s-%s/%s", start, end, blob.getSize()));
 
 
         long finalEnd = end;
@@ -140,12 +133,22 @@ public class StorageComponent {
                 .cast(DataBuffer.class);
     }
 
+    private void setUpHeaders(HttpHeaders headers, Blob blob) {
+        headers.set(HttpHeaders.CONTENT_TYPE, "video/mp4");
+        headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
+        headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(blob.getSize())); //content length é o total do arquivo ou total da requesicao?
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"video.mp4\"");
+        headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
+        headers.set(HttpHeaders.PRAGMA, "no-cache");
+        headers.set(HttpHeaders.EXPIRES, "0");
+    }
+
     public Integer getEndRange(String[] ranges, Integer start, Long blobSize) {
         int end;
         if (ranges.length > 1) {
             end = Integer.parseInt(ranges[1]);
         } else {
-            end = Math.min(start + 5000, blobSize.intValue());
+            end = Math.min(start + 4999, blobSize.intValue());
         }
         return end;
     }
