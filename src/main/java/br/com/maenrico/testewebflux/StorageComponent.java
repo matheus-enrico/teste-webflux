@@ -10,11 +10,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -77,60 +79,25 @@ public class StorageComponent {
         return blobInfo;
     }
 
-    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpRequest request, ServerHttpResponse response) throws IOException {
+    public Mono<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) throws IOException {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
-
-        HttpHeaders headers = response.getHeaders();
-        setUpHeaders(headers, blob);
-        response.setStatusCode(HttpStatus.PARTIAL_CONTENT);
-
-
-        List<String> strings = request.getHeaders().get(HttpHeaders.RANGE);
-        String[] value = Objects.requireNonNull(strings).get(0).split("=");
-        String[] split = value[1].split("-");
-
-        Integer start = Integer.parseInt(split[0]);
-        System.out.println("start = " + start);
-        Integer end = getEndRange(split, start, blob.getSize());
-        System.out.println("end = " + end);
-
-        long contentLength = end - start + 1;
-        System.out.println("contentLength = " + contentLength);
-        headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
-        headers.set(HttpHeaders.CONTENT_RANGE, String.format("bytes %s-%s/%s", start, end, blob.getSize()));
-        log.info("Resp Header Content-Range: {}", String.format("bytes %s-%s/%s", start, end, blob.getSize()));
+        File tempFile = File.createTempFile("temp", ".mp4");
+        log.info("created temp file: {}", tempFile.getAbsolutePath());
+        blob.downloadTo(tempFile.toPath());
+        log.info("downloaded blob to temp file");
 
 
-        long finalEnd = end;
-        return Flux.create(sink -> {
-                    try (ReadChannel reader = blob.reader()) {
-                        reader.seek(start);
-                        long position = start;
-                        ByteBuffer buffer = ByteBuffer.allocate(1024 * 100);
+//        get bytes from tempFile
+        byte[] bytes = Files.readAllBytes(tempFile.toPath());
 
-                        while (position <= finalEnd) {
-                            buffer.clear();
-                            int read = reader.read(buffer);
-                            if (read <= 0) {
-                                break;
-                            }
-                            buffer.flip();
-
-                            int chunkSize = (int) Math.min(buffer.remaining(), finalEnd - position + 1);
-                            byte[] chunk = new byte[chunkSize];
-                            buffer.get(chunk, 0, chunkSize);
-                            position += chunkSize;
-
-                            sink.next(response.bufferFactory().wrap(chunk));
-                        }
-                        sink.complete();
-                    } catch (IOException e) {
-                        sink.error(e);
-                    }
-                }).doFinally(signalType -> {
-                    log.info("Closing reader");
-                })
-                .cast(DataBuffer.class);
+        log.info("read bytes from temp file");
+        return Mono.create(dataBufferMonoSink -> {
+            try {
+                dataBufferMonoSink.success(response.bufferFactory().wrap(bytes));
+            } catch (Exception e) {
+                dataBufferMonoSink.error(e);
+            }
+        });
     }
 
     private void setUpHeaders(HttpHeaders headers, Blob blob) {

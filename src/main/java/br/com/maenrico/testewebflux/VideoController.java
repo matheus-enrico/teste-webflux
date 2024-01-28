@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 
@@ -30,18 +31,18 @@ public class VideoController {
     }
 
     @GetMapping(value = "/videos/{uuid}", produces = "video/mp4")
-    public Flux<DataBuffer> streamVideo(@PathVariable String uuid,
+    public Mono<DataBuffer> streamVideo(@PathVariable String uuid,
                                         @RequestHeader("Range") String range,
                                         ServerHttpRequest request,
                                         ServerHttpResponse response) {
         try {
             // Realiza o streaming do vídeo
             log.info("range: {}", range);
-            return storageComponent.downloadFileStreaming(uuid, request, response);
+            return storageComponent.downloadFileStreaming(uuid, response);
         } catch (Exception e) {
             // Trate a exceção conforme necessário
             log.error("Erro ao fazer streaming do vídeo", e);
-            return Flux.error(e);
+            return Mono.error(e);
         }
     }
 }
