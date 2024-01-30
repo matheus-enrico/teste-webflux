@@ -98,25 +98,4 @@ public class StorageComponent {
             return state;
         });
     }
-
-    private void setUpHeaders(HttpHeaders headers, Blob blob) {
-        headers.set(HttpHeaders.CONTENT_TYPE, "video/mp4");
-        headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
-        headers.set(HttpHeaders.CONTENT_LENGTH, String.valueOf(blob.getSize())); //content length é o total do arquivo ou total da requesicao?
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"video.mp4\"");
-        headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
-        headers.set(HttpHeaders.PRAGMA, "no-cache");
-        headers.set(HttpHeaders.EXPIRES, "0");
-    }
-
-    public Integer getEndRange(String[] ranges, Integer start, Long blobSize) {
-        int end;
-        if (ranges.length > 1) {
-            end = Integer.parseInt(ranges[1]);
-        } else {
-            end = Math.min(start + 4999, blobSize.intValue());
-        }
-        return end;
-    }
-
 }
