@@ -6,21 +6,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 
 
 public class StorageComponent {
@@ -48,8 +43,6 @@ public class StorageComponent {
 
         storage.compose(composeBuilder.build());
 
-        // Seria interessante deletar os chunks após o compose?
-        // Ou deixar para fazer o download dos chunks e montar dps a partir deles?
         blobIds.forEach(storage::delete);
     }
 
@@ -79,24 +72,30 @@ public class StorageComponent {
         return blobInfo;
     }
 
-    public Mono<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) throws IOException {
+    public Flux<DataBuffer> downloadFileStreaming(final String uuid, ServerHttpResponse response) throws IOException {
         Blob blob = storage.get(BlobId.of(bucketName, String.format("%s.mp4", uuid)));
-        File tempFile = File.createTempFile("temp", ".mp4");
-        log.info("created temp file: {}", tempFile.getAbsolutePath());
-        blob.downloadTo(tempFile.toPath());
-        log.info("downloaded blob to temp file");
+        ReadChannel reader = blob.reader();
+        ByteBuffer buffer = ByteBuffer.allocate(64 * 1024); // Adjust buffer size as needed
 
+        // Set the Accept-Ranges header
+        response.getHeaders().set(HttpHeaders.ACCEPT_RANGES, "bytes");
 
-//        get bytes from tempFile
-        byte[] bytes = Files.readAllBytes(tempFile.toPath());
-
-        log.info("read bytes from temp file");
-        return Mono.create(dataBufferMonoSink -> {
+        return Flux.generate(() -> buffer, (state, sink) -> {
             try {
-                dataBufferMonoSink.success(response.bufferFactory().wrap(bytes));
-            } catch (Exception e) {
-                dataBufferMonoSink.error(e);
+                int bytesRead = reader.read(state);
+                if (bytesRead > 0) {
+                    byte[] byteArray = new byte[bytesRead];
+                    state.flip();
+                    state.get(byteArray);
+                    sink.next(response.bufferFactory().wrap(byteArray));
+                    state.clear();
+                } else {
+                    sink.complete();
+                }
+            } catch (IOException e) {
+                sink.error(e);
             }
+            return state;
         });
     }
 

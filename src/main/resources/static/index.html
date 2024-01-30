@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="pt">
 <head>
-
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
@@ -14,18 +13,42 @@
 <div class="container mt-5">
     <h2>Netflixo papai</h2>
     <div class="row">
-<!--        <div class="col-md-6">-->
-            <video src="videos/calabreso-california" width="100%" height="880px" controls></video>
-<!--        </div>-->
-<!--        <div class="col-md-6">-->
-<!--            <video src="videos/MUSICA-NETFLIX" width="100%" height="440px" controls preload="none">-->
-<!--            </video>-->
-<!--        </div>-->
+        <div class="col-md-6">
+            <video src="videos/calabreso-california" width="100%" height="440px" controls></video>
+        </div>
+        <!-- ... -->
+    </div>
+    <div class="row mt-5">
+        <div class="col-md-6"> <br>
+            <form id="uploadForm">
+                <input type="file" id="videoFile" accept="video/*">
+                <button type="submit">Upload</button>
+            </form>
+        </div>
     </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-U1DAWAznBHeqEIlVSCgzq+c9gqGAJn5c/t99JyeKa9xxaYpSvHU5awsuZVVFIhvj"
-        crossorigin="anonymous"></script>
+<!-- ... -->
+<script>
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var file = document.getElementById('videoFile').files[0];
+        var chunkSize = 5 * 1024 * 1024; // 5MB
+        var chunks = Math.ceil(file.size / chunkSize);
+        for (var i = 0; i < chunks; i++) {
+            var start = i * chunkSize;
+            var end = Math.min(start + chunkSize, file.size);
+            var blob = file.slice(start, end);
+            var formData = new FormData();
+            formData.append('chunk', blob);
+            formData.append('chunkIndex', i);
+            formData.append('chunks', chunks);
+            formData.append('fileName', file.name);
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+        }
+    });
+</script>
 </body>
 </html>
